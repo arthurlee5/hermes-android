@@ -165,13 +165,21 @@ object CommandDispatcher {
                 // (API 31+) returns the system value directly — no status-bar text parsing.
                 // OEM text formats differ by language and skin ("电量剩余 53。",
                 // "電池電量為百分之 87。", "87%", ...) and any sample-based parser mis-reads.
+                // Auth: the HTTP interceptor already requires a Bearer token for everything
+                // except /ping; the explicit gate below future-proofs the handler itself
+                // (reviewer note on #103).
+                if (!authenticated) {
+                    return mapOf("error" to "Unauthorized") to 401
+                }
                 val service = BridgeAccessibilityService.instance
                     ?: return mapOf("error" to "Accessibility service not running") to 503
                 if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
                     return mapOf("error" to "Requires Android 12 (API 31)") to 501
                 }
                 val result = mutableMapOf<String, Any>("batteryPercentage" to service.batteryPercentage)
-                // chargerConnected needs ConfigurationConstants (API 33+)
+                // chargerConnected needs ConfigurationConstants (API 33+) and is therefore
+                // OPTIONAL: the key is absent on API 31-32 devices — consumers must handle
+                // its absence, not assume a false value.
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     result["chargerConnected"] =
                         service.resources.configuration.constants?.chargerConnected ?: false

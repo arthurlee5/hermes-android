@@ -21,12 +21,14 @@ import org.robolectric.annotation.Config
 /**
  * Contract tests for the GET /battery endpoint.
  *
- * Battery level must come from AccessibilityService.getBatteryPercentage() (API 30+),
+ * Battery level must come from AccessibilityService.getBatteryPercentage() (API 31+),
  * NOT from parsing status-bar text — OEM text formats differ by language and skin
  * ("电量剩余 53。", "電池電量為百分之 87。", "87%", …) and any parser built from
  * samples will eventually mis-read. These tests pin that contract: the endpoint
- * returns the system percentage verbatim with no auth requirement, and reports a
- * clean error when the accessibility service is absent.
+ * returns the system percentage for authenticated callers (HTTP interceptor already
+ * gates every route except /ping; the handler additionally 401s unauthenticated ones),
+ * and reports clean errors when the accessibility service is absent or the OS is
+ * below API 31.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -53,13 +55,22 @@ class CommandDispatcherBatteryTest {
     }
 
     @Test
-    fun `battery returns the system percentage without authentication`() = runTest {
-        val (result, status) = CommandDispatcher.dispatch("GET", "/battery", JsonObject(), JsonObject(), false)
+    fun `battery returns the system percentage for authenticated callers`() = runTest {
+        val (result, status) = CommandDispatcher.dispatch("GET", "/battery", JsonObject(), JsonObject(), true)
 
         assertEquals(200, status)
         val map = result as Map<*, *>
         assertEquals(87, map["batteryPercentage"])
         assertEquals(true, map["chargerConnected"])
+    }
+
+    @Test
+    fun `battery rejects unauthenticated callers with 401`() = runTest {
+        val (result, status) = CommandDispatcher.dispatch("GET", "/battery", JsonObject(), JsonObject(), false)
+
+        assertEquals(401, status)
+        val map = result as Map<*, *>
+        assertEquals("Unauthorized", map["error"])
     }
 
     @Test
